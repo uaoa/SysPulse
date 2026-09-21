@@ -1,0 +1,73 @@
+{
+  "": {
+    "dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/SysPulse.d",
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/SysPulse.o",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/master.swiftdeps"
+  },
+  "/Users/zakharii/Desktop/Personal/Projects/SysPulse/Sources/SysPulse/App.swift": {
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/App.swift.o",
+    "swiftmodule": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/App~partial.swiftmodule",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/App.swiftdeps",
+    "diagnostics": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/App.dia"
+  },
+  "/Users/zakharii/Desktop/Personal/Projects/SysPulse/Sources/SysPulse/Core/Findings.swift": {
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Findings.swift.o",
+    "swiftmodule": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Findings~partial.swiftmodule",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Findings.swiftdeps",
+    "diagnostics": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Findings.dia"
+  },
+  "/Users/zakharii/Desktop/Personal/Projects/SysPulse/Sources/SysPulse/Core/Format.swift": {
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Format.swift.o",
+    "swiftmodule": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Format~partial.swiftmodule",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Format.swiftdeps",
+    "diagnostics": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Format.dia"
+  },
+  "/Users/zakharii/Desktop/Personal/Projects/SysPulse/Sources/SysPulse/Core/Identifier.swift": {
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Identifier.swift.o",
+    "swiftmodule": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Identifier~partial.swiftmodule",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Identifier.swiftdeps",
+    "diagnostics": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Identifier.dia"
+  },
+  "/Users/zakharii/Desktop/Personal/Projects/SysPulse/Sources/SysPulse/Core/Monitor.swift": {
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Monitor.swift.o",
+    "swiftmodule": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Monitor~partial.swiftmodule",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Monitor.swiftdeps",
+    "diagnostics": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Monitor.dia"
+  },
+  "/Users/zakharii/Desktop/Personal/Projects/SysPulse/Sources/SysPulse/Core/PortScanner.swift": {
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/PortScanner.swift.o",
+    "swiftmodule": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/PortScanner~partial.swiftmodule",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/PortScanner.swiftdeps",
+    "diagnostics": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/PortScanner.dia"
+  },
+  "/Users/zakharii/Desktop/Personal/Projects/SysPulse/Sources/SysPulse/Core/ProcessSampler.swift": {
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/ProcessSampler.swift.o",
+    "swiftmodule": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/ProcessSampler~partial.swiftmodule",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/ProcessSampler.swiftdeps",
+    "diagnostics": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/ProcessSampler.dia"
+  },
+  "/Users/zakharii/Desktop/Personal/Projects/SysPulse/Sources/SysPulse/Core/SystemMetrics.swift": {
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/SystemMetrics.swift.o",
+    "swiftmodule": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/SystemMetrics~partial.swiftmodule",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/SystemMetrics.swiftdeps",
+    "diagnostics": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/SystemMetrics.dia"
+  },
+  "/Users/zakharii/Desktop/Personal/Projects/SysPulse/Sources/SysPulse/UI/Components.swift": {
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Components.swift.o",
+    "swiftmodule": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Components~partial.swiftmodule",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Components.swiftdeps",
+    "diagnostics": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/Components.dia"
+  },
+  "/Users/zakharii/Desktop/Personal/Projects/SysPulse/Sources/SysPulse/UI/DetailView.swift": {
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/DetailView.swift.o",
+    "swiftmodule": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/DetailView~partial.swiftmodule",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/DetailView.swiftdeps",
+    "diagnostics": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/DetailView.dia"
+  },
+  "/Users/zakharii/Desktop/Personal/Projects/SysPulse/Sources/SysPulse/UI/MenuBarLabel.swift": {
+    "object": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/MenuBarLabel.swift.o",
+    "swiftmodule": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/MenuBarLabel~partial.swiftmodule",
+    "swift-dependencies": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/MenuBarLabel.swiftdeps",
+    "diagnostics": "/Users/zakharii/Desktop/Personal/Projects/SysPulse/.build/arm64-apple-macosx/release/SysPulse.build/MenuBarLabel.dia"
+  }
+}
