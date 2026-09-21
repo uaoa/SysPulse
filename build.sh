@@ -32,6 +32,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <!-- Пояснення в системному запиті: навіщо додатку доступ до вікон. -->
+  <!-- Без цього ключа macOS мовчки відмовляє в AppleScript до Chrome. -->
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Щоб показувати список відкритих вкладок Chrome.</string>
   <key>NSAccessibilityUsageDescription</key>
   <string>Щоб показувати, що саме відкрито у застосунках: назви вкладок, чатів і файлів поруч із процесами.</string>
 </dict>

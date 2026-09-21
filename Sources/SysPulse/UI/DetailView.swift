@@ -27,7 +27,9 @@ struct DetailView: View {
           if showSettings { settingsSection }
           findingsSection
           resourcesSection
+          sessionsSection
           groupsSection
+          tabsSection
           portsSection
         }
         .padding(12)
@@ -149,20 +151,21 @@ struct DetailView: View {
 
         Divider().padding(.vertical, 2)
 
-        // Accessibility дає заголовки вікон: назви вкладок Chrome, чатів
-        // Claude, відкритих файлів. Без нього лишаються самі імена процесів.
+        // Назви сесій Claude читаються з її власних журналів і дозволу не
+        // потребують. Accessibility потрібен лише для заголовків вікон інших
+        // застосунків — без нього список просто менш докладний.
         HStack(spacing: 6) {
           Text(
             WindowContext.isAuthorized
-              ? "Доступ до заголовків вікон надано"
-              : "Дозвольте доступ, щоб бачити назви вкладок і чатів"
+              ? "Заголовки вікон доступні"
+              : "Дозвольте доступ, щоб бачити заголовки вікон застосунків"
           )
           .font(.system(size: 10))
           .foregroundStyle(WindowContext.isAuthorized ? .secondary : .primary)
           .fixedSize(horizontal: false, vertical: true)
           Spacer(minLength: 4)
           if !WindowContext.isAuthorized {
-            ActionButton(title: "Дозволити") { WindowContext.requestAccess() }
+            ActionButton(title: "Дозволити") { monitor.requestWindowAccess() }
           }
         }
       }
@@ -446,51 +449,56 @@ struct DetailView: View {
         Spacer()
         // Окрема кнопка, бо читання заголовків ходить по IPC у кожен
         // застосунок: дешевше за скан портів, але не для фонового циклу.
-        ActionButton(title: monitor.windowTitles.isEmpty ? "Що відкрито" : "Оновити контекст") {
-          monitor.refreshWindowTitles()
+        ActionButton(title: monitor.lastContextPass == nil ? "Що відкрито" : "Оновити контекст") {
+          monitor.refreshContext()
         }
-        .help("Показати назви вкладок Chrome, чатів Claude та відкритих файлів")
+        .help("Показати назви сесій Claude, вкладок Chrome і заголовки вікон")
       }
       ForEach(monitor.groups()) { group in
         VStack(alignment: .leading, spacing: 4) {
-          HStack(spacing: 6) {
-            Button {
-              if expanded.contains(group.name) {
-                expanded.remove(group.name)
-              } else {
-                expanded.insert(group.name)
-              }
-            } label: {
+          // Ціль для кліку — увесь рядок, а не стрілка в десять пікселів.
+          Button {
+            guard group.members.count > 1 else { return }
+            if expanded.contains(group.name) {
+              expanded.remove(group.name)
+            } else {
+              expanded.insert(group.name)
+            }
+          } label: {
+            HStack(spacing: 6) {
               Image(
                 systemName: expanded.contains(group.name) ? "chevron.down" : "chevron.right"
               )
               .font(.system(size: 8, weight: .bold))
               .foregroundStyle(.tertiary)
               .frame(width: 10)
-            }
-            .buttonStyle(.plain)
-            .disabled(group.members.count == 1)
-            .opacity(group.members.count == 1 ? 0 : 1)
+              .opacity(group.members.count == 1 ? 0 : 1)
 
-            Text(group.name)
-              .font(.system(size: 11))
-              .lineLimit(1)
-            if group.members.count > 1 {
-              Text("×\(group.members.count)")
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
-            }
-            Spacer(minLength: 4)
-            if group.cpu > 0.05 {
-              Text(Format.percent(group.cpu))
-                .font(.system(size: 10))
+              Text(group.name)
+                .font(.system(size: 11))
+                .lineLimit(1)
+              if group.members.count > 1 {
+                Text("×\(group.members.count)")
+                  .font(.system(size: 9))
+                  .foregroundStyle(.tertiary)
+              }
+              Spacer(minLength: 4)
+              if group.cpu > 0.05 {
+                Text(Format.percent(group.cpu))
+                  .font(.system(size: 10))
+                  .monospacedDigit()
+                  .foregroundStyle(group.cpu > 0.8 ? Color.orange : Color.secondary)
+              }
+              Text(Format.bytes(group.memory))
+                .font(.system(size: 10, weight: .medium))
                 .monospacedDigit()
-                .foregroundStyle(group.cpu > 0.8 ? Color.orange : Color.secondary)
             }
-            Text(Format.bytes(group.memory))
-              .font(.system(size: 10, weight: .medium))
-              .monospacedDigit()
+            // Прозоре тло розтягує ціль кліку на порожнє місце рядка:
+            // без нього клікаються лише самі написи.
+            .contentShape(Rectangle())
           }
+          .buttonStyle(.plain)
+          .disabled(group.members.count == 1)
 
           if expanded.contains(group.name) {
             ForEach(group.members.prefix(12)) { member in
@@ -518,17 +526,21 @@ struct DetailView: View {
 
   private func processRow(_ member: ProcessInfo_) -> some View {
     HStack(spacing: 6) {
-      Text(String(member.pid))
-        .font(.system(size: 9, design: .monospaced))
-        .foregroundStyle(.tertiary)
-        .frame(width: 42, alignment: .leading)
+      // PID лише під «Більше деталей»: у звичайному режимі це стовпчик цифр,
+      // який нічого не пояснює, а місце під назву з'їдає.
+      if showAllDetails {
+        Text(String(member.pid))
+          .font(.system(size: 9, design: .monospaced))
+          .foregroundStyle(.tertiary)
+          .frame(width: 42, alignment: .leading)
+      }
       VStack(alignment: .leading, spacing: 1) {
         Text(member.label ?? member.name)
           .font(.system(size: 10))
           .lineLimit(1)
-        // Заголовок вікна: назва вкладки, чату, відкритого файлу. Саме він
+        // Назва сесії Claude або заголовок власного вікна процесу — те, що
         // відповідає на питання «а що це взагалі таке?».
-        if let title = monitor.windowTitle(for: member) {
+        if let title = monitor.context(for: member) {
           Text(title)
             .font(.system(size: 9))
             .foregroundStyle(.secondary)
@@ -550,6 +562,150 @@ struct DetailView: View {
       }
     }
     .padding(.leading, 16)
+  }
+
+  // ── Сесії Claude Code ─────────────────────────────────────────────────
+
+  /// Які розмови запущені, чим зайняті й скільки коштують.
+  ///
+  /// Дані з журналів самої Claude Code (`~/.claude/projects`), тому сесія
+  /// видно навіть тоді, коли її процес загубився серед шести сотень інших.
+  @ViewBuilder
+  private var sessionsSection: some View {
+    if !monitor.sessions.isEmpty {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          sectionTitle("Сесії Claude")
+          Spacer()
+          Text("\(monitor.sessions.filter { $0.pid != nil }.count) запущено")
+            .font(.system(size: 9))
+            .foregroundStyle(.tertiary)
+        }
+        ForEach(monitor.sessions) { session in
+          HStack(alignment: .top, spacing: 7) {
+            Circle()
+              .fill(stateColor(session.state, running: session.pid != nil))
+              .frame(width: 6, height: 6)
+              .padding(.top, 3)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(session.title)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+              Text(sessionSubtitle(session))
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            VStack(alignment: .trailing, spacing: 2) {
+              if session.memory > 0 {
+                Text(Format.bytes(session.memory))
+                  .font(.system(size: 10, weight: .medium))
+                  .monospacedDigit()
+              }
+              if let pid = session.pid {
+                ActionButton(title: "Зупинити", destructive: true) {
+                  confirmKill = Finding(
+                    id: "session-\(pid)",
+                    kind: .idleSessions,
+                    title: session.title,
+                    detail: "\(session.processCount) процесів, \(Format.bytes(session.memory))",
+                    pids: [pid],
+                    severity: 2)
+                }
+              }
+            }
+          }
+          .padding(8)
+          .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
+        }
+      }
+    }
+  }
+
+  private func stateColor(_ state: ClaudeSessions.State, running: Bool) -> Color {
+    guard running else { return .secondary.opacity(0.35) }
+    switch state {
+    case .working: return .orange
+    case .waiting: return .green
+    case .idle: return .secondary
+    }
+  }
+
+  private func sessionSubtitle(_ session: Monitor.SessionRow) -> String {
+    let project = URL(fileURLWithPath: session.directory).lastPathComponent
+    guard session.pid != nil else {
+      return "\(project) · не запущена · \(Format.duration(session.silence)) тому"
+    }
+    var parts = [project, session.state.label]
+    if session.runtime > 0 {
+      parts.append("відкрита \(Format.duration(session.runtime))")
+    }
+    if session.state != .working, session.silence > 60 {
+      parts.append("тиша \(Format.duration(session.silence))")
+    }
+    return parts.joined(separator: " · ")
+  }
+
+  // ── Вкладки Chrome ────────────────────────────────────────────────────
+
+  /// Вкладки окремим списком, а не підписом до процесів.
+  ///
+  /// Chrome не публікує зв'язку «вкладка ↔ процес-рендерер»: тридцять п'ять
+  /// його процесів не розкладаються по вкладках. Показувати заголовок одного
+  /// вікна біля кожного процесу означало б брехати, тож вкладки живуть тут.
+  @ViewBuilder
+  private var tabsSection: some View {
+    if !monitor.browserTabs.isEmpty {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          sectionTitle("Вкладки Chrome")
+          Spacer()
+          Text("\(monitor.browserTabs.count)")
+            .font(.system(size: 9))
+            .foregroundStyle(.tertiary)
+        }
+        // Показуємо активні вкладки перших вікон: саме вони щось споживають,
+        // а повний список на сотню рядків тут нікому не потрібен.
+        ForEach(visibleTabs) { tab in
+          HStack(spacing: 6) {
+            Circle()
+              .fill(tab.active ? Color.accentColor : Color.secondary.opacity(0.35))
+              .frame(width: 5, height: 5)
+            VStack(alignment: .leading, spacing: 1) {
+              Text(tab.title)
+                .font(.system(size: 10))
+                .lineLimit(1)
+              if showAllDetails, !tab.host.isEmpty {
+                Text(tab.host)
+                  .font(.system(size: 9))
+                  .foregroundStyle(.tertiary)
+                  .lineLimit(1)
+              }
+            }
+            Spacer(minLength: 4)
+          }
+        }
+        if monitor.browserTabs.count > visibleTabs.count {
+          Text("…і ще \(monitor.browserTabs.count - visibleTabs.count)")
+            .font(.system(size: 9))
+            .foregroundStyle(.tertiary)
+        }
+      }
+    }
+  }
+
+  /// Активні вкладки вперед — їх видно на екрані просто зараз; решта за
+  /// порядком у вікнах, щоб список не перемішувався між оновленнями.
+  private var visibleTabs: [BrowserTabs.Tab] {
+    let byPosition = { (left: BrowserTabs.Tab, right: BrowserTabs.Tab) in
+      left.windowIndex == right.windowIndex
+        ? left.index < right.index : left.windowIndex < right.windowIndex
+    }
+    let active = monitor.browserTabs.filter(\.active).sorted(by: byPosition)
+    let rest = monitor.browserTabs.filter { !$0.active }.sorted(by: byPosition)
+    return Array((active + rest).prefix(showAllDetails ? 30 : 12))
   }
 
   // ── Порти ─────────────────────────────────────────────────────────────

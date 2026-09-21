@@ -5,38 +5,50 @@ import SwiftUI
 /// Це найдорожче місце додатка, бо система перемальовує рядок меню часто.
 /// Тому тут немає ні графіків, ні анімацій, ні таймерів: лише текст, який
 /// оновлюється, коли значення справді змінилось (див. крок таймера в Monitor).
-/// Ширина фіксована моноширинними цифрами, щоб сусідні іконки не стрибали.
+///
+/// Чому текст, а не SF Symbols: `MenuBarExtra` міряє свій label один раз і
+/// обрізає його по ширині, розрахованій приблизно під одну іконку. З двома
+/// парами «іконка + число» другу пару просто не було видно. Літери C і M
+/// коштують кілька пунктів ширини й ніколи не зникають.
 struct MenuBarLabel: View {
   @ObservedObject var monitor: Monitor
   @ObservedObject var settings: Settings
 
   var body: some View {
-    HStack(spacing: 6) {
-      if settings.menuBarMode.showsCPU {
-        metric(
-          value: monitor.snapshot.cpuTotal,
-          symbol: "cpu",
-          alarming: monitor.snapshot.cpuTotal > 0.85 || monitor.snapshot.loadPerCore > 1.5)
-      }
-      if settings.menuBarMode.showsMemory {
-        metric(
-          value: monitor.snapshot.memPressure,
-          symbol: "memorychip",
-          alarming: monitor.snapshot.memPressure > 0.9 || monitor.snapshot.swapOutsPerSec > 200)
-      }
-    }
-    // Підказка при наведенні: коротке пояснення стану без відкриття вікна.
-    .help(Format.verdict(monitor.snapshot).text)
+    Text(text)
+      .font(.system(size: 11, weight: .medium, design: .rounded))
+      .monospacedDigit()
+      .foregroundStyle(alarming ? AnyShapeStyle(Color.red) : AnyShapeStyle(.primary))
+      // Підказка при наведенні: коротке пояснення стану без відкриття вікна.
+      .help(Format.verdict(monitor.snapshot).text)
   }
 
-  private func metric(value: Double, symbol: String, alarming: Bool) -> some View {
-    HStack(spacing: 2) {
-      Image(systemName: symbol)
-        .font(.system(size: 10, weight: .medium))
-      Text("\(Int((value * 100).rounded()))%")
-        .font(.system(size: 11, weight: .medium, design: .rounded))
-        .monospacedDigit()
+  /// Готовий рядок. Складаємо його самі, а не з кількох `Text`, бо система
+  /// міряє label цілком — окремі елементи вона обрізає.
+  private var text: String {
+    var parts: [String] = []
+    if settings.menuBarMode.showsCPU {
+      parts.append("C \(percent(monitor.snapshot.cpuTotal))")
     }
-    .foregroundStyle(alarming ? AnyShapeStyle(Color.red) : AnyShapeStyle(.primary))
+    if settings.menuBarMode.showsMemory {
+      parts.append("M \(percent(monitor.snapshot.memPressure))")
+    }
+    return parts.joined(separator: "  ")
+  }
+
+  /// Червоніємо лише через те, що справді показуємо: якщо ОЗУ сховано, тривога
+  /// за памʼяттю не має фарбувати число процесора.
+  private var alarming: Bool {
+    let cpuAlarm =
+      settings.menuBarMode.showsCPU
+      && (monitor.snapshot.cpuTotal > 0.85 || monitor.snapshot.loadPerCore > 1.5)
+    let memoryAlarm =
+      settings.menuBarMode.showsMemory
+      && (monitor.snapshot.memPressure > 0.9 || monitor.snapshot.swapOutsPerSec > 200)
+    return cpuAlarm || memoryAlarm
+  }
+
+  private func percent(_ value: Double) -> String {
+    "\(Int((value * 100).rounded()))%"
   }
 }

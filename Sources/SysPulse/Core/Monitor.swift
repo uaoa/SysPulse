@@ -24,6 +24,35 @@ final class Monitor: ObservableObject {
   /// Заголовки вікон за PID: «що саме там відкрито». Читаються лише за
   /// кнопкою — Accessibility ходить по IPC у чужі процеси (див. WindowContext).
   @Published private(set) var windowTitles: [Int32: WindowContext.Entry] = [:]
+  /// Назви сесій Claude Code за PID головного процесу сесії.
+  @Published private(set) var sessionTitles: [Int32: String] = [:]
+  /// Відкриті вкладки Chrome — окремим списком, бо зв'язку з процесами немає.
+  @Published private(set) var browserTabs: [BrowserTabs.Tab] = []
+  @Published private(set) var lastContextPass: Date?
+
+  /// Сесії Claude Code — назва, стан, скільки мовчить. Показуємо окремою
+  /// секцією: сесія може жити й без помітного процесу в списку.
+  @Published private(set) var sessions: [SessionRow] = []
+
+  /// Сесія разом із тим, що про неї відомо з боку процесів.
+  struct SessionRow: Identifiable, Sendable {
+    var id: String { directory }
+    let directory: String
+    let title: String
+    let state: ClaudeSessions.State
+    let silence: TimeInterval
+    /// Скільки процесів належить цій сесії та її нащадкам.
+    let processCount: Int
+    /// Скільки памʼяті вони разом тримають.
+    let memory: UInt64
+    /// Головний процес сесії — той, який зупиняє кнопка.
+    let pid: Int32?
+    /// Як довго живе головний процес.
+    let runtime: TimeInterval
+  }
+
+  /// Назви сесій за робочою текою — проміжні дані для `sessionTitles`.
+  private var claudeSessions: [String: ClaudeSessions.Session] = [:]
   @Published var detailsOpen = false {
     didSet { restartTimer() }
   }
@@ -150,36 +179,107 @@ final class Monitor: ObservableObject {
     refreshPorts()
   }
 
-  /// Заголовки вікон застосунків. Окрема кнопка, бо AX ходить по IPC у кожен
-  /// застосунок: десятки мілісекунд, а підвислий застосунок коштує таймаут.
-  func refreshWindowTitles() {
-    guard WindowContext.isAuthorized else {
-      WindowContext.requestAccess()
-      return
+  /// Заголовки вікон, назви сесій Claude і вкладки Chrome — усе, що пояснює
+  /// «що саме там відкрито». Окрема кнопка: AX ходить по IPC у кожен
+  /// застосунок, а AppleScript до Chrome коштує ще десятки мілісекунд.
+  func refreshContext() {
+    if WindowContext.isAuthorized {
+      windowTitles = WindowContext.collect()
     }
-    windowTitles = WindowContext.collect()
+    claudeSessions = ClaudeSessions.byDirectory()
+    browserTabs = BrowserTabs.chrome() ?? []
+
+    // Назви сесій розкладаємо по PID один раз: читання `cwd` — це звернення
+    // до ядра, і робити його на кожен рядок списку під час рендеру не можна.
+    //
+    // На одну теку може припадати кілька процесів `claude`: сесію
+    // перезапустили, а попередній процес лишився жити. Назву отримує
+    // наймолодший — саме в ньому людина працює зараз.
+    var newest: [String: ProcessInfo_] = [:]
+    for proc in processes where proc.name.hasPrefix("claude") {
+      guard let cwd = ProcessSampler.workingDirectory(proc.pid),
+        claudeSessions[cwd] != nil
+      else { continue }
+      if let current = newest[cwd], current.started >= proc.started { continue }
+      newest[cwd] = proc
+    }
+    sessionTitles = Dictionary(
+      uniqueKeysWithValues: newest.compactMap { cwd, proc in
+        claudeSessions[cwd].map { (proc.pid, $0.title) }
+      })
+
+    sessions = buildSessionRows(mainProcesses: newest)
+    lastContextPass = Date()
   }
 
-  /// Заголовок вікна для процесу — свій або успадкований від застосунку.
+  /// Сесії для окремої секції: назва з журналу плюс вага з боку процесів.
   ///
-  /// Chrome і Electron розкидають роботу по хелперах: у самого хелпера вікна
-  /// немає, вікно — у головного процесу застосунку. Тому йдемо вгору по
-  /// батьках, поки не знайдемо того, хто має вікно.
-  func windowTitle(for proc: ProcessInfo_) -> String? {
-    if let entry = windowTitles[proc.pid] { return entry.title }
-    guard !windowTitles.isEmpty else { return nil }
-    // Індекс рахуємо раз на знімок: цей метод викликається для кожного рядка
-    // списку, а будувати словник із 600 процесів щоразу — марна робота.
-    let byPid = processIndex
-    var parent = proc.ppid
-    var depth = 0
-    while depth < 4, parent > 1 {
-      if let entry = windowTitles[parent] { return entry.title }
-      guard let ancestor = byPid[parent] else { break }
-      parent = ancestor.ppid
-      depth += 1
+  /// Пам'ять рахуємо разом із нащадками — MCP-сервери й оболонки належать
+  /// сесії, і саме сумарна цифра відповідає на питання «скільки вона коштує».
+  private func buildSessionRows(mainProcesses: [String: ProcessInfo_]) -> [SessionRow] {
+    // Нащадки головного процесу сесії — по дереву ppid, як і в `annotate`.
+    var descendants: [Int32: [ProcessInfo_]] = [:]
+    for proc in processes {
+      var parent = proc.ppid
+      var depth = 0
+      while depth < 5, parent > 1 {
+        if mainProcesses.values.contains(where: { $0.pid == parent }) {
+          descendants[parent, default: []].append(proc)
+          break
+        }
+        guard let ancestor = processIndex[parent] else { break }
+        parent = ancestor.ppid
+        depth += 1
+      }
     }
-    return nil
+
+    return claudeSessions.map { directory, session in
+      let main = mainProcesses[directory]
+      let own = main.map { [$0] } ?? []
+      let family = own + (main.flatMap { descendants[$0.pid] } ?? [])
+      return SessionRow(
+        directory: directory,
+        title: session.title,
+        state: session.state,
+        silence: session.silence,
+        processCount: family.count,
+        memory: family.reduce(0) { $0 + $1.rss },
+        pid: main?.pid,
+        runtime: main?.runtime ?? 0)
+    }
+    // Запущені сесії показуємо завжди; із незапущених — лише вчорашні й
+    // свіжіші. Розмова, що мовчить десятий день, — це вже історія, а не те,
+    // що має займати місце у вікні.
+    .filter { $0.pid != nil || $0.silence < 24 * 3600 }
+    // Живі сесії вперед, далі за свіжістю.
+    .sorted { left, right in
+      if (left.pid != nil) != (right.pid != nil) { return left.pid != nil }
+      return left.silence < right.silence
+    }
+  }
+
+  /// Системний запит дозволу Accessibility — лише з кнопки в налаштуваннях.
+  func requestWindowAccess() {
+    WindowContext.requestAccess()
+  }
+
+  /// Підпис до процесу: назва сесії Claude або заголовок його власного вікна.
+  ///
+  /// Обидва джерела стосуються лише самого процесу — нічого не успадковується
+  /// від батьків, інакше один заголовок розмножувався б по всіх нащадках.
+  func context(for proc: ProcessInfo_) -> String? {
+    sessionTitles[proc.pid] ?? windowTitles[proc.pid]?.title
+  }
+
+  /// Заголовок вікна для процесу — лише свій власний.
+  ///
+  /// Успадкування від батька тут було помилкою: у Chrome 35 процесів-рендерерів
+  /// мають спільного батька, тож заголовок його активного вікна підписувався до
+  /// кожного з них — виходило «одна вкладка, тридцять п'ять рядків про неї».
+  /// Зв'язку «процес ↔ вкладка» Chrome не публікує, тому вкладки показуємо
+  /// окремим списком (BrowserTabs), а не підписом до процесів.
+  func windowTitle(for proc: ProcessInfo_) -> String? {
+    windowTitles[proc.pid]?.title
   }
 
   // ── Оптимізація ──────────────────────────────────────────────────────
