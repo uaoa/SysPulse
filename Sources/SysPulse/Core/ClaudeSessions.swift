@@ -63,13 +63,14 @@ enum ClaudeSessions {
   /// сам застосунок — далі людина бачить свої вкладки й обирає сама.
   ///
   /// `pid` — головний процес сесії; за ним визначаємо, кому вона належить.
-  static func focus(pid: Int32?, directory: String) {
-    if let pid, let owner = owningApplication(of: pid) {
+  /// Якщо власника не знайшли (сесія в процесі, який уже не має вікна),
+  /// відкриваємо теку проєкту — це хоч щось, а не мовчазний клік.
+  static func focus(pid: Int32, directory: String) {
+    if let owner = owningApplication(of: pid) {
       owner.activate(options: [])
-      return
+    } else {
+      NSWorkspace.shared.open(URL(fileURLWithPath: directory))
     }
-    // Процесу немає (сесію закрито) — відкриваємо теку проєкту.
-    NSWorkspace.shared.open(URL(fileURLWithPath: directory))
   }
 
   /// Застосунок, усередині якого живе процес сесії: VS Code, Terminal, iTerm.

@@ -28,10 +28,12 @@ final class Monitor: ObservableObject {
   @Published private(set) var sessionTitles: [Int32: String] = [:]
   /// Відкриті вкладки Chrome — окремим списком, бо зв'язку з процесами немає.
   @Published private(set) var browserTabs: [BrowserTabs.Tab] = []
+  /// Теки, відкриті у VS Code: ними підписуємо вікна редактора.
+  @Published private(set) var editorFolders: [EditorWindows.Folder] = []
   @Published private(set) var lastContextPass: Date?
 
-  /// Сесії Claude Code — назва, стан, скільки мовчить. Показуємо окремою
-  /// секцією: сесія може жити й без помітного процесу в списку.
+  /// Запущені сесії Claude Code — назва, стан, скільки мовчить. Окрема
+  /// секція, бо серед шести сотень процесів сесію інакше не знайти.
   @Published private(set) var sessions: [SessionRow] = []
 
   /// Сесія разом із тим, що про неї відомо з боку процесів.
@@ -45,8 +47,9 @@ final class Monitor: ObservableObject {
     let processCount: Int
     /// Скільки памʼяті вони разом тримають.
     let memory: UInt64
-    /// Головний процес сесії — той, який зупиняє кнопка.
-    let pid: Int32?
+    /// Головний процес сесії — той, який зупиняє кнопка. Список містить лише
+    /// запущені сесії, тож процес тут є завжди.
+    let pid: Int32
     /// Як довго живе головний процес.
     let runtime: TimeInterval
   }
@@ -188,6 +191,7 @@ final class Monitor: ObservableObject {
     }
     claudeSessions = ClaudeSessions.byDirectory()
     browserTabs = BrowserTabs.chrome() ?? []
+    editorFolders = EditorWindows.folders()
 
     // Назви сесій розкладаємо по PID один раз: читання `cwd` — це звернення
     // до ядра, і робити його на кожен рядок списку під час рендеру не можна.
@@ -233,10 +237,11 @@ final class Monitor: ObservableObject {
       }
     }
 
-    return claudeSessions.map { directory, session in
-      let main = mainProcesses[directory]
-      let own = main.map { [$0] } ?? []
-      let family = own + (main.flatMap { descendants[$0.pid] } ?? [])
+    return claudeSessions.compactMap { directory, session -> SessionRow? in
+      // Без запущеного процесу сесія до списку не потрапляє: секція показує
+      // те, що працює зараз, а журнали закритих розмов лишаються на диску.
+      guard let main = mainProcesses[directory] else { return nil }
+      let family = [main] + (descendants[main.pid] ?? [])
       return SessionRow(
         directory: directory,
         title: session.title,
@@ -244,23 +249,26 @@ final class Monitor: ObservableObject {
         silence: session.silence,
         processCount: family.count,
         memory: family.reduce(0) { $0 + $1.rss },
-        pid: main?.pid,
-        runtime: main?.runtime ?? 0)
+        pid: main.pid,
+        runtime: main.runtime)
     }
-    // Запущені сесії показуємо завжди; із незапущених — лише вчорашні й
-    // свіжіші. Розмова, що мовчить десятий день, — це вже історія, а не те,
-    // що має займати місце у вікні.
-    .filter { $0.pid != nil || $0.silence < 24 * 3600 }
-    // Живі сесії вперед, далі за свіжістю.
-    .sorted { left, right in
-      if (left.pid != nil) != (right.pid != nil) { return left.pid != nil }
-      return left.silence < right.silence
-    }
+    // Найсвіжіші вперед.
+    .sorted { $0.silence < $1.silence }
   }
 
   /// Системний запит дозволу Accessibility — лише з кнопки в налаштуваннях.
   func requestWindowAccess() {
     WindowContext.requestAccess()
+  }
+
+  /// Підпис до групи: перелік того, що в ній насправді відкрито.
+  ///
+  /// Для VS Code це назви тек — «AOA, SysPulse». Зіставити конкретне вікно з
+  /// конкретним процесом-рендерером не можна (вони не мають ні власного cwd,
+  /// ні шляху в аргументах), тому підписуємо групу цілком, а не рядки в ній.
+  func groupContext(_ name: String) -> String? {
+    guard name == "VS Code", !editorFolders.isEmpty else { return nil }
+    return editorFolders.map(\.name).joined(separator: ", ")
   }
 
   /// Перейти на вкладку Chrome.
@@ -329,7 +337,11 @@ final class Monitor: ObservableObject {
     for pid in pids { terminate(pid) }
     // Даємо процесам секунду на коректне завершення, потім оновлюємо список.
     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-      self?.refreshNow()
+      guard let self else { return }
+      self.refreshNow()
+      // Сесії й вкладки живуть окремо від знімка процесів, тож `refreshNow`
+      // їх не чіпає: без цього рядка плашка зупиненої сесії лишалась у вікні.
+      if self.lastContextPass != nil { self.refreshContext() }
     }
   }
 

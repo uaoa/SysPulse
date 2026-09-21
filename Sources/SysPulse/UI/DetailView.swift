@@ -478,9 +478,18 @@ struct DetailView: View {
               .frame(width: 10)
               .opacity(group.members.count == 1 ? 0 : 1)
 
-              Text(group.name)
-                .font(.system(size: 11))
-                .lineLimit(1)
+              VStack(alignment: .leading, spacing: 1) {
+                Text(group.name)
+                  .font(.system(size: 11))
+                  .lineLimit(1)
+                // Що саме відкрито в цій групі: для VS Code — назви тек.
+                if let context = monitor.groupContext(group.name) {
+                  Text(context)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                }
+              }
               // Для Chrome рахуємо вкладки: «×35 процесів» нічого не означає,
               // а «26 вкладок» — саме та величина, якою людина міряє браузер.
               if group.name == "Chrome", !monitor.browserTabs.isEmpty {
@@ -648,7 +657,7 @@ struct DetailView: View {
         HStack {
           sectionTitle("Сесії Claude")
           Spacer()
-          Text("\(monitor.sessions.filter { $0.pid != nil }.count) запущено")
+          Text("\(monitor.sessions.count) запущено")
             .font(.system(size: 9))
             .foregroundStyle(.tertiary)
         }
@@ -659,7 +668,7 @@ struct DetailView: View {
             } label: {
               HStack(alignment: .top, spacing: 7) {
                 Circle()
-                  .fill(stateColor(session.state, running: session.pid != nil))
+                  .fill(stateColor(session.state))
                   .frame(width: 6, height: 6)
                   .padding(.top, 3)
                 VStack(alignment: .leading, spacing: 2) {
@@ -677,26 +686,21 @@ struct DetailView: View {
               .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(
-              session.pid != nil
-                ? "Перейти до застосунку, у якому відкрита сесія"
-                : "Відкрити теку проєкту")
+            .help("Перейти до застосунку, у якому відкрита сесія")
             VStack(alignment: .trailing, spacing: 2) {
               if session.memory > 0 {
                 Text(Format.bytes(session.memory))
                   .font(.system(size: 10, weight: .medium))
                   .monospacedDigit()
               }
-              if let pid = session.pid {
-                ActionButton(title: "Зупинити", destructive: true) {
-                  confirmKill = Finding(
-                    id: "session-\(pid)",
-                    kind: .idleSessions,
-                    title: session.title,
-                    detail: "\(session.processCount) процесів, \(Format.bytes(session.memory))",
-                    pids: [pid],
-                    severity: 2)
-                }
+              ActionButton(title: "Зупинити", destructive: true) {
+                confirmKill = Finding(
+                  id: "session-\(session.pid)",
+                  kind: .idleSessions,
+                  title: session.title,
+                  detail: "\(session.processCount) процесів, \(Format.bytes(session.memory))",
+                  pids: [session.pid],
+                  severity: 2)
               }
             }
           }
@@ -707,8 +711,7 @@ struct DetailView: View {
     }
   }
 
-  private func stateColor(_ state: ClaudeSessions.State, running: Bool) -> Color {
-    guard running else { return .secondary.opacity(0.35) }
+  private func stateColor(_ state: ClaudeSessions.State) -> Color {
     switch state {
     case .working: return .orange
     case .waiting: return .green
@@ -718,9 +721,6 @@ struct DetailView: View {
 
   private func sessionSubtitle(_ session: Monitor.SessionRow) -> String {
     let project = URL(fileURLWithPath: session.directory).lastPathComponent
-    guard session.pid != nil else {
-      return "\(project) · не запущена · \(Format.duration(session.silence)) тому"
-    }
     var parts = [project, session.state.label]
     if session.runtime > 0 {
       parts.append("відкрита \(Format.duration(session.runtime))")
