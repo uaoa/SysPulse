@@ -7,13 +7,16 @@ import Foundation
 /// Chrome через AppleScript.
 ///
 /// Зіставити вкладку з конкретним процесом-рендерером не можна: Chrome не
-/// публікує цього зв'язку. Тому показуємо вкладки як окремий список «що
-/// відкрито», а не як підпис до кожного процесу — чесніше, ніж вигадувати
-/// відповідність, якої немає.
+/// публікує цього зв'язку ні через AppleScript, ні в аргументах рендерерів.
+/// Тому вкладки замінюють собою список процесів Chrome у групі, але памʼяті
+/// біля кожної не показуємо — вигадана цифра гірша за її відсутність. Скільки
+/// важить Chrome цілком, видно на заголовку групи.
 enum BrowserTabs {
 
   struct Tab: Identifiable, Sendable {
-    var id: String { "\(windowIndex)-\(index)-\(title)" }
+    /// Власний id вкладки з Chrome: переживає перемикання й закриття сусідів,
+    /// на відміну від позиції у вікні.
+    let id: Int
     let title: String
     let host: String
     let windowIndex: Int
@@ -40,7 +43,7 @@ enum BrowserTabs {
           set tabIndex to 0
           repeat with t in tabs of w
             set tabIndex to tabIndex + 1
-            set output to output & windowIndex & "\u{1}" & tabIndex & "\u{1}" & (activeIndex as text) & "\u{1}" & (title of t) & "\u{1}" & (URL of t) & "\u{2}"
+            set output to output & windowIndex & "\u{1}" & tabIndex & "\u{1}" & (activeIndex as text) & "\u{1}" & (id of t) & "\u{1}" & (title of t) & "\u{1}" & (URL of t) & "\u{2}"
           end repeat
         end repeat
         return output
@@ -52,21 +55,73 @@ enum BrowserTabs {
     var tabs: [Tab] = []
     for record in raw.components(separatedBy: "\u{2}") where !record.isEmpty {
       let fields = record.components(separatedBy: "\u{1}")
-      guard fields.count >= 5,
+      guard fields.count >= 6,
         let windowIndex = Int(fields[0]), let index = Int(fields[1]),
-        let activeIndex = Int(fields[2])
+        let activeIndex = Int(fields[2]), let id = Int(fields[3])
       else { continue }
-      let title = fields[3].trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !title.isEmpty else { continue }
+      let rawTitle = fields[4].trimmingCharacters(in: .whitespacesAndNewlines)
+      let url = fields[5]
+      // Вкладку без заголовка (ще вантажиться, або about:blank) не викидаємо:
+      // інакше вона не видима у списку, і закрити її звідси неможливо.
+      let title = rawTitle.isEmpty ? (host(of: url).isEmpty ? "Порожня вкладка" : url) : rawTitle
       tabs.append(
         Tab(
+          id: id,
           title: title,
-          host: host(of: fields[4]),
+          host: host(of: url),
           windowIndex: windowIndex,
           index: index,
           active: index == activeIndex))
     }
     return tabs
+  }
+
+  /// Перейти на вкладку: зробити її активною та підняти Chrome наперед.
+  ///
+  /// Шукаємо за власним id вкладки, а не за позицією: поки вікно SysPulse
+  /// відкрите, вкладки могли переставити чи закрити, і позиція вже бреше.
+  @discardableResult
+  static func focus(_ tab: Tab) -> Bool {
+    let script = """
+      tell application "Google Chrome"
+        set windowIndex to 0
+        repeat with w in windows
+          set windowIndex to windowIndex + 1
+          set tabIndex to 0
+          repeat with t in tabs of w
+            set tabIndex to tabIndex + 1
+            if ((id of t) as integer) = \(tab.id) then
+              set active tab index of w to tabIndex
+              set index of w to 1
+              activate
+              return "ok"
+            end if
+          end repeat
+        end repeat
+        return ""
+      end tell
+      """
+    return run(script) == "ok"
+  }
+
+  /// Закрити вкладку. Chrome лишає її у «нещодавно закритих», тож дію можна
+  /// скасувати самим браузером — тому окремого підтвердження тут немає.
+  @discardableResult
+  static func close(_ tab: Tab) -> Bool {
+    let script = """
+      tell application "Google Chrome"
+        repeat with w in windows
+          repeat with t in tabs of w
+            if ((id of t) as integer) = \(tab.id) then
+              close t
+              return "ok"
+            end if
+          end repeat
+        end repeat
+        return ""
+      end tell
+      """
+    return run(script) == "ok"
   }
 
   /// Чи дано дозвіл на автоматизацію Chrome. Перевіряємо найдешевшим

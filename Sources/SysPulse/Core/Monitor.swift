@@ -263,6 +263,23 @@ final class Monitor: ObservableObject {
     WindowContext.requestAccess()
   }
 
+  /// Перейти на вкладку Chrome.
+  func focusTab(_ tab: BrowserTabs.Tab) {
+    BrowserTabs.focus(tab)
+  }
+
+  /// Закрити вкладку й одразу прибрати її зі списку, не чекаючи на повний
+  /// перечит: пауза між кліком і зникненням рядка читалась би як збій.
+  func closeTab(_ tab: BrowserTabs.Tab) {
+    guard BrowserTabs.close(tab) else { return }
+    browserTabs.removeAll { $0.id == tab.id }
+  }
+
+  /// Перейти до сесії Claude: підняти застосунок, у якому вона відкрита.
+  func focusSession(_ session: SessionRow) {
+    ClaudeSessions.focus(pid: session.pid, directory: session.directory)
+  }
+
   /// Підпис до процесу: назва сесії Claude або заголовок його власного вікна.
   ///
   /// Обидва джерела стосуються лише самого процесу — нічого не успадковується

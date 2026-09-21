@@ -1,3 +1,5 @@
+import AppKit
+import Darwin
 import Foundation
 
 /// Назви сесій Claude Code з її власних журналів.
@@ -53,6 +55,49 @@ enum ClaudeSessions {
 
   private static let root = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent(".claude/projects")
+
+  /// Перейти до сесії: підняти застосунок, у якому вона відкрита.
+  ///
+  /// Точніше не вийде: сесія Claude Code живе всередині VS Code або терміналу,
+  /// і жоден із них не дає активувати конкретну вкладку ззовні. Тому піднімаємо
+  /// сам застосунок — далі людина бачить свої вкладки й обирає сама.
+  ///
+  /// `pid` — головний процес сесії; за ним визначаємо, кому вона належить.
+  static func focus(pid: Int32?, directory: String) {
+    if let pid, let owner = owningApplication(of: pid) {
+      owner.activate(options: [])
+      return
+    }
+    // Процесу немає (сесію закрито) — відкриваємо теку проєкту.
+    NSWorkspace.shared.open(URL(fileURLWithPath: directory))
+  }
+
+  /// Застосунок, усередині якого живе процес сесії: VS Code, Terminal, iTerm.
+  private static func owningApplication(of pid: Int32) -> NSRunningApplication? {
+    var current = pid
+    var depth = 0
+    while depth < 6, current > 1 {
+      if let app = NSRunningApplication(processIdentifier: current),
+        app.activationPolicy == .regular
+      {
+        return app
+      }
+      guard let parent = parentProcess(of: current) else { return nil }
+      current = parent
+      depth += 1
+    }
+    return nil
+  }
+
+  /// ppid одного процесу через `sysctl` — без запуску зовнішніх команд.
+  private static func parentProcess(of pid: Int32) -> Int32? {
+    var info = kinfo_proc()
+    var size = MemoryLayout<kinfo_proc>.stride
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
+    let parent = info.kp_eproc.e_ppid
+    return parent > 0 ? parent : nil
+  }
 
   /// Назви сесій за робочою текою.
   ///

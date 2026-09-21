@@ -29,7 +29,6 @@ struct DetailView: View {
           resourcesSection
           sessionsSection
           groupsSection
-          tabsSection
           portsSection
         }
         .padding(12)
@@ -463,6 +462,11 @@ struct DetailView: View {
               expanded.remove(group.name)
             } else {
               expanded.insert(group.name)
+              // Chrome розгортається у вкладки, тож читаємо їх саме тут:
+              // окрема кнопка заради цього була б зайвим кроком.
+              if group.name == "Chrome", monitor.browserTabs.isEmpty {
+                monitor.refreshContext()
+              }
             }
           } label: {
             HStack(spacing: 6) {
@@ -477,7 +481,13 @@ struct DetailView: View {
               Text(group.name)
                 .font(.system(size: 11))
                 .lineLimit(1)
-              if group.members.count > 1 {
+              // Для Chrome рахуємо вкладки: «×35 процесів» нічого не означає,
+              // а «26 вкладок» — саме та величина, якою людина міряє браузер.
+              if group.name == "Chrome", !monitor.browserTabs.isEmpty {
+                Text("\(monitor.browserTabs.count) вкладок")
+                  .font(.system(size: 9))
+                  .foregroundStyle(.tertiary)
+              } else if group.members.count > 1 {
                 Text("×\(group.members.count)")
                   .font(.system(size: 9))
                   .foregroundStyle(.tertiary)
@@ -501,10 +511,21 @@ struct DetailView: View {
           .disabled(group.members.count == 1)
 
           if expanded.contains(group.name) {
-            ForEach(group.members.prefix(12)) { member in
-              processRow(member)
+            // Chrome розгортається у вкладки, а не в процеси: «Google Chrome
+            // Helper (Renderer)» тридцять п'ять разів нікому ні про що не
+            // говорить, а назва вкладки говорить усе.
+            if group.name == "Chrome", !monitor.browserTabs.isEmpty {
+              ForEach(groupedTabs) { tab in
+                tabRow(tab)
+              }
+            } else {
+              ForEach(group.members.prefix(12)) { member in
+                processRow(member)
+              }
             }
-            if group.members.count > 1 {
+            // Для Chrome кнопки «зупинити групу» немає: це вбило б увесь
+            // браузер разом з усіма вкладками. Там закривають по вкладці.
+            if group.members.count > 1, group.name != "Chrome" {
               HStack {
                 Spacer()
                 ActionButton(title: "Зупинити всю групу", destructive: true) {
@@ -522,6 +543,56 @@ struct DetailView: View {
         }
       }
     }
+  }
+
+  /// Рядок вкладки: клік — перейти, «×» — закрити.
+  ///
+  /// Памʼяті біля вкладки немає навмисно: Chrome не публікує, який рендерер
+  /// обслуговує яку вкладку, а вигадана цифра гірша за її відсутність.
+  private func tabRow(_ tab: BrowserTabs.Tab) -> some View {
+    HStack(spacing: 6) {
+      Button {
+        monitor.focusTab(tab)
+      } label: {
+        HStack(spacing: 6) {
+          Circle()
+            .fill(tab.active ? Color.accentColor : Color.secondary.opacity(0.3))
+            .frame(width: 5, height: 5)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(tab.title)
+              .font(.system(size: 10))
+              .lineLimit(1)
+            if showAllDetails, !tab.host.isEmpty {
+              Text(tab.host)
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            }
+          }
+          Spacer(minLength: 4)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help("Перейти до вкладки")
+
+      ActionButton(title: "×", destructive: true) {
+        monitor.closeTab(tab)
+      }
+      .help("Закрити вкладку")
+    }
+    .padding(.leading, 16)
+  }
+
+  /// Вкладки для акордеона: активні вперед, далі за порядком у вікнах.
+  private var groupedTabs: [BrowserTabs.Tab] {
+    let byPosition = { (left: BrowserTabs.Tab, right: BrowserTabs.Tab) in
+      left.windowIndex == right.windowIndex
+        ? left.index < right.index : left.windowIndex < right.windowIndex
+    }
+    let active = monitor.browserTabs.filter(\.active).sorted(by: byPosition)
+    let rest = monitor.browserTabs.filter { !$0.active }.sorted(by: byPosition)
+    return active + rest
   }
 
   private func processRow(_ member: ProcessInfo_) -> some View {
@@ -583,21 +654,33 @@ struct DetailView: View {
         }
         ForEach(monitor.sessions) { session in
           HStack(alignment: .top, spacing: 7) {
-            Circle()
-              .fill(stateColor(session.state, running: session.pid != nil))
-              .frame(width: 6, height: 6)
-              .padding(.top, 3)
-            VStack(alignment: .leading, spacing: 2) {
-              Text(session.title)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-              Text(sessionSubtitle(session))
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
+            Button {
+              monitor.focusSession(session)
+            } label: {
+              HStack(alignment: .top, spacing: 7) {
+                Circle()
+                  .fill(stateColor(session.state, running: session.pid != nil))
+                  .frame(width: 6, height: 6)
+                  .padding(.top, 3)
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(session.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                  Text(sessionSubtitle(session))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+              }
+              .contentShape(Rectangle())
             }
-            Spacer(minLength: 4)
+            .buttonStyle(.plain)
+            .help(
+              session.pid != nil
+                ? "Перейти до застосунку, у якому відкрита сесія"
+                : "Відкрити теку проєкту")
             VStack(alignment: .trailing, spacing: 2) {
               if session.memory > 0 {
                 Text(Format.bytes(session.memory))
@@ -646,66 +729,6 @@ struct DetailView: View {
       parts.append("тиша \(Format.duration(session.silence))")
     }
     return parts.joined(separator: " · ")
-  }
-
-  // ── Вкладки Chrome ────────────────────────────────────────────────────
-
-  /// Вкладки окремим списком, а не підписом до процесів.
-  ///
-  /// Chrome не публікує зв'язку «вкладка ↔ процес-рендерер»: тридцять п'ять
-  /// його процесів не розкладаються по вкладках. Показувати заголовок одного
-  /// вікна біля кожного процесу означало б брехати, тож вкладки живуть тут.
-  @ViewBuilder
-  private var tabsSection: some View {
-    if !monitor.browserTabs.isEmpty {
-      VStack(alignment: .leading, spacing: 8) {
-        HStack {
-          sectionTitle("Вкладки Chrome")
-          Spacer()
-          Text("\(monitor.browserTabs.count)")
-            .font(.system(size: 9))
-            .foregroundStyle(.tertiary)
-        }
-        // Показуємо активні вкладки перших вікон: саме вони щось споживають,
-        // а повний список на сотню рядків тут нікому не потрібен.
-        ForEach(visibleTabs) { tab in
-          HStack(spacing: 6) {
-            Circle()
-              .fill(tab.active ? Color.accentColor : Color.secondary.opacity(0.35))
-              .frame(width: 5, height: 5)
-            VStack(alignment: .leading, spacing: 1) {
-              Text(tab.title)
-                .font(.system(size: 10))
-                .lineLimit(1)
-              if showAllDetails, !tab.host.isEmpty {
-                Text(tab.host)
-                  .font(.system(size: 9))
-                  .foregroundStyle(.tertiary)
-                  .lineLimit(1)
-              }
-            }
-            Spacer(minLength: 4)
-          }
-        }
-        if monitor.browserTabs.count > visibleTabs.count {
-          Text("…і ще \(monitor.browserTabs.count - visibleTabs.count)")
-            .font(.system(size: 9))
-            .foregroundStyle(.tertiary)
-        }
-      }
-    }
-  }
-
-  /// Активні вкладки вперед — їх видно на екрані просто зараз; решта за
-  /// порядком у вікнах, щоб список не перемішувався між оновленнями.
-  private var visibleTabs: [BrowserTabs.Tab] {
-    let byPosition = { (left: BrowserTabs.Tab, right: BrowserTabs.Tab) in
-      left.windowIndex == right.windowIndex
-        ? left.index < right.index : left.windowIndex < right.windowIndex
-    }
-    let active = monitor.browserTabs.filter(\.active).sorted(by: byPosition)
-    let rest = monitor.browserTabs.filter { !$0.active }.sorted(by: byPosition)
-    return Array((active + rest).prefix(showAllDetails ? 30 : 12))
   }
 
   // ── Порти ─────────────────────────────────────────────────────────────
