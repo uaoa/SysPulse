@@ -9,12 +9,13 @@ import SwiftUI
 @main
 struct SysPulseApp: App {
   @StateObject private var monitor = Monitor()
+  @StateObject private var settings = Settings()
 
   var body: some Scene {
     MenuBarExtra {
-      DetailView(monitor: monitor)
+      DetailView(monitor: monitor, settings: settings)
     } label: {
-      MenuBarLabel(monitor: monitor)
+      MenuBarLabel(monitor: monitor, settings: settings)
     }
     .menuBarExtraStyle(.window)
   }

@@ -7,9 +7,14 @@ import SwiftUI
 /// «усе гаразд?» → «хто винен?» → «що з портами?» → «що зупинити?».
 struct DetailView: View {
   @ObservedObject var monitor: Monitor
+  @ObservedObject var settings: Settings
   @State private var expanded: Set<String> = []
   @State private var showAllDetails = false
   @State private var confirmKill: Finding?
+  /// Непорожній список = відкрита панель оптимізації. Тримаємо копію
+  /// кандидатів, бо позначки редагуються, а знімок під ними оновлюється.
+  @State private var optimizing: [Optimizer.Candidate]?
+  @State private var showSettings = false
 
   private var verdict: (text: String, level: Int) { Format.verdict(monitor.snapshot) }
 
@@ -19,6 +24,7 @@ struct DetailView: View {
       Divider()
       ScrollView {
         VStack(alignment: .leading, spacing: 14) {
+          if showSettings { settingsSection }
           findingsSection
           resourcesSection
           groupsSection
@@ -28,6 +34,17 @@ struct DetailView: View {
       }
       Divider()
       footer
+    }
+    // Підтвердження — накладкою всередині попапу, а не .alert(). Попап
+    // MenuBarExtra — це NSPanel, який закривається, втрачаючи фокус: окреме
+    // вікно алерту забирає фокус, попап зникає разом із цим View, і діалог
+    // залишається невидимим, але незакритим — клік нікуди не доходить.
+    .overlay {
+      if let finding = confirmKill {
+        confirmSheet(finding)
+      } else if optimizing != nil {
+        optimizeSheet
+      }
     }
     // MenuBarExtra(.window) не нав'язує розміру: без явної висоти ScrollView
     // отримує нуль і вміст просто не видно. Тому висота задана прямо тут.
@@ -86,15 +103,177 @@ struct DetailView: View {
 
   private var footer: some View {
     HStack(spacing: 8) {
-      Toggle("Запускати при вході", isOn: launchBinding)
-        .toggleStyle(.checkbox)
-        .font(.system(size: 10))
+      Button {
+        showSettings.toggle()
+      } label: {
+        Image(systemName: "gearshape")
+          .font(.system(size: 12))
+          .foregroundStyle(showSettings ? Color.accentColor : Color.secondary)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help("Налаштування")
+
+      ActionButton(title: "Прибрати зайве") {
+        monitor.refreshNow()
+        optimizing = monitor.optimizerCandidates
+      }
       Spacer()
       ActionButton(title: "Оновити") { monitor.refreshNow() }
       ActionButton(title: "Вийти") { NSApp.terminate(nil) }
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
+  }
+
+  // ── Налаштування ──────────────────────────────────────────────────────
+
+  private var settingsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      sectionTitle("Налаштування")
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Показувати в menu bar")
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+        Picker("", selection: $settings.menuBarMode) {
+          ForEach(MenuBarMode.allCases) { mode in
+            Text(mode.title).tag(mode)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+
+        Toggle("Запускати при вході", isOn: launchBinding)
+          .toggleStyle(.checkbox)
+          .font(.system(size: 10))
+
+        Divider().padding(.vertical, 2)
+
+        // Accessibility дає заголовки вікон: назви вкладок Chrome, чатів
+        // Claude, відкритих файлів. Без нього лишаються самі імена процесів.
+        HStack(spacing: 6) {
+          Text(
+            WindowContext.isAuthorized
+              ? "Доступ до заголовків вікон надано"
+              : "Дозвольте доступ, щоб бачити назви вкладок і чатів"
+          )
+          .font(.system(size: 10))
+          .foregroundStyle(WindowContext.isAuthorized ? .secondary : .primary)
+          .fixedSize(horizontal: false, vertical: true)
+          Spacer(minLength: 4)
+          if !WindowContext.isAuthorized {
+            ActionButton(title: "Дозволити") { WindowContext.requestAccess() }
+          }
+        }
+      }
+      .padding(10)
+      .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
+    }
+  }
+
+  // ── Оптимізація ───────────────────────────────────────────────────────
+
+  /// Панель «прибрати зайве»: спершу показуємо, що саме буде зупинено, і лише
+  /// потім діємо. Кнопки без списку тут бути не може — людина має бачити, що
+  /// зникне з її машини.
+  @ViewBuilder
+  private var optimizeSheet: some View {
+    ZStack {
+      Rectangle()
+        .fill(Color.black.opacity(0.28))
+        .onTapGesture { optimizing = nil }
+
+      VStack(alignment: .leading, spacing: 10) {
+        Text("Прибрати зайве")
+          .font(.system(size: 13, weight: .semibold))
+
+        if let candidates = optimizing, candidates.isEmpty {
+          Text("Нічого зайвого не знайшлось — система вже в порядку.")
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+          Text("Усе тут зупиняється мʼяко і піднімається назад однією командою.")
+            .font(.system(size: 10))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+          ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+              ForEach(Array((optimizing ?? []).enumerated()), id: \.element.id) { index, item in
+                candidateRow(item, index: index)
+              }
+            }
+          }
+          .frame(maxHeight: 280)
+
+          Divider()
+          HStack {
+            Text(selectionSummary)
+              .font(.system(size: 10))
+              .foregroundStyle(.secondary)
+            Spacer()
+          }
+        }
+
+        HStack(spacing: 8) {
+          Spacer()
+          ActionButton(title: "Скасувати") { optimizing = nil }
+          if let candidates = optimizing, !candidates.isEmpty {
+            ActionButton(title: "Зупинити позначене", destructive: true) {
+              monitor.optimize(candidates)
+              optimizing = nil
+            }
+          }
+        }
+      }
+      .padding(14)
+      .frame(width: 330, alignment: .leading)
+      .background(
+        RoundedRectangle(cornerRadius: 10)
+          .fill(.regularMaterial)
+          .shadow(radius: 12, y: 4)
+      )
+    }
+    .ignoresSafeArea()
+  }
+
+  private func candidateRow(_ item: Optimizer.Candidate, index: Int) -> some View {
+    HStack(alignment: .top, spacing: 7) {
+      Toggle(
+        "",
+        isOn: Binding(
+          get: { optimizing?[index].selected ?? false },
+          set: { optimizing?[index].selected = $0 })
+      )
+      .toggleStyle(.checkbox)
+      .labelsHidden()
+
+      VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 4) {
+          Text(item.title)
+            .font(.system(size: 11, weight: .medium))
+            .fixedSize(horizontal: false, vertical: true)
+          Spacer(minLength: 4)
+          Text(Format.bytes(item.memory))
+            .font(.system(size: 10))
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+        }
+        Text(item.reason)
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+  }
+
+  private var selectionSummary: String {
+    let selected = (optimizing ?? []).filter(\.selected)
+    guard !selected.isEmpty else { return "Нічого не позначено." }
+    let memory = selected.reduce(0) { $0 + $1.memory }
+    let count = selected.reduce(0) { $0 + $1.pids.count }
+    return "Буде зупинено \(count) процес(ів), звільниться \(Format.bytes(memory))."
   }
 
   private var launchBinding: Binding<Bool> {
@@ -149,18 +328,48 @@ struct DetailView: View {
           )
         }
       }
-      .alert(item: $confirmKill) { finding in
-        Alert(
-          title: Text("Зупинити \(finding.pids.count) процес(ів)?"),
-          message: Text(
-            "\(finding.title)\n\nСпершу надішлемо мʼякий сигнал завершення — процес встигне зберегти стан."
-          ),
-          primaryButton: .destructive(Text("Зупинити")) {
-            monitor.terminateAll(finding.pids)
-          },
-          secondaryButton: .cancel(Text("Скасувати")))
-      }
     }
+  }
+
+  // ── Підтвердження зупинки ─────────────────────────────────────────────
+
+  /// Накладка замість системного алерту: живе в тому ж вікні, тому попап
+  /// не втрачає фокус і не закривається на півдорозі.
+  private func confirmSheet(_ finding: Finding) -> some View {
+    ZStack {
+      // Тло-заглушка: клік поза картку = скасування, як у звичайного діалогу.
+      Rectangle()
+        .fill(Color.black.opacity(0.28))
+        .onTapGesture { confirmKill = nil }
+
+      VStack(alignment: .leading, spacing: 10) {
+        Text("Зупинити \(finding.pids.count) процес(ів)?")
+          .font(.system(size: 12, weight: .semibold))
+        Text(finding.title)
+          .font(.system(size: 11))
+          .fixedSize(horizontal: false, vertical: true)
+        Text("Спершу надішлемо мʼякий сигнал завершення — процес встигне зберегти стан.")
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 8) {
+          Spacer()
+          ActionButton(title: "Скасувати") { confirmKill = nil }
+          ActionButton(title: "Зупинити", destructive: true) {
+            monitor.terminateAll(finding.pids)
+            confirmKill = nil
+          }
+        }
+      }
+      .padding(14)
+      .frame(width: 300, alignment: .leading)
+      .background(
+        RoundedRectangle(cornerRadius: 10)
+          .fill(.regularMaterial)
+          .shadow(radius: 12, y: 4)
+      )
+    }
+    .ignoresSafeArea()
   }
 
   private func icon(for kind: Finding.Kind) -> String {
@@ -232,7 +441,16 @@ struct DetailView: View {
 
   private var groupsSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      sectionTitle("Хто займає памʼять")
+      HStack {
+        sectionTitle("Хто займає памʼять")
+        Spacer()
+        // Окрема кнопка, бо читання заголовків ходить по IPC у кожен
+        // застосунок: дешевше за скан портів, але не для фонового циклу.
+        ActionButton(title: monitor.windowTitles.isEmpty ? "Що відкрито" : "Оновити контекст") {
+          monitor.refreshWindowTitles()
+        }
+        .help("Показати назви вкладок Chrome, чатів Claude та відкритих файлів")
+      }
       ForEach(monitor.groups()) { group in
         VStack(alignment: .leading, spacing: 4) {
           HStack(spacing: 6) {
@@ -308,6 +526,14 @@ struct DetailView: View {
         Text(member.label ?? member.name)
           .font(.system(size: 10))
           .lineLimit(1)
+        // Заголовок вікна: назва вкладки, чату, відкритого файлу. Саме він
+        // відповідає на питання «а що це взагалі таке?».
+        if let title = monitor.windowTitle(for: member) {
+          Text(title)
+            .font(.system(size: 9))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
         if showAllDetails {
           Text("\(Format.duration(member.runtime)) · \(member.threads) потоків")
             .font(.system(size: 9))

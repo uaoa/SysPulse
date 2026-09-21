@@ -21,6 +21,9 @@ final class Monitor: ObservableObject {
   @Published private(set) var ports: [ListeningPort] = []
   @Published private(set) var lastPortScan: Date?
   @Published private(set) var lastDetailPass: Date?
+  /// Заголовки вікон за PID: «що саме там відкрито». Читаються лише за
+  /// кнопкою — Accessibility ходить по IPC у чужі процеси (див. WindowContext).
+  @Published private(set) var windowTitles: [Int32: WindowContext.Entry] = [:]
   @Published var detailsOpen = false {
     didSet { restartTimer() }
   }
@@ -31,6 +34,9 @@ final class Monitor: ObservableObject {
   private let metrics = SystemMetrics()
   private let sampler = ProcessSampler()
   private var timer: Timer?
+
+  /// pid → процес для поточного знімка. Перебудовується в `tick`.
+  private var processIndex: [Int32: ProcessInfo_] = [:]
 
   /// Крок при відкритому вікні й при закритому.
   private let activeInterval: TimeInterval = 2
@@ -81,6 +87,7 @@ final class Monitor: ObservableObject {
       }
     }
     processes = sampled
+    processIndex = Dictionary(sampled.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
   }
 
   /// Дороге: читаємо аргументи й даємо людські назви.
@@ -141,6 +148,52 @@ final class Monitor: ObservableObject {
   func refreshNow() {
     tick(enrich: true)
     refreshPorts()
+  }
+
+  /// Заголовки вікон застосунків. Окрема кнопка, бо AX ходить по IPC у кожен
+  /// застосунок: десятки мілісекунд, а підвислий застосунок коштує таймаут.
+  func refreshWindowTitles() {
+    guard WindowContext.isAuthorized else {
+      WindowContext.requestAccess()
+      return
+    }
+    windowTitles = WindowContext.collect()
+  }
+
+  /// Заголовок вікна для процесу — свій або успадкований від застосунку.
+  ///
+  /// Chrome і Electron розкидають роботу по хелперах: у самого хелпера вікна
+  /// немає, вікно — у головного процесу застосунку. Тому йдемо вгору по
+  /// батьках, поки не знайдемо того, хто має вікно.
+  func windowTitle(for proc: ProcessInfo_) -> String? {
+    if let entry = windowTitles[proc.pid] { return entry.title }
+    guard !windowTitles.isEmpty else { return nil }
+    // Індекс рахуємо раз на знімок: цей метод викликається для кожного рядка
+    // списку, а будувати словник із 600 процесів щоразу — марна робота.
+    let byPid = processIndex
+    var parent = proc.ppid
+    var depth = 0
+    while depth < 4, parent > 1 {
+      if let entry = windowTitles[parent] { return entry.title }
+      guard let ancestor = byPid[parent] else { break }
+      parent = ancestor.ppid
+      depth += 1
+    }
+    return nil
+  }
+
+  // ── Оптимізація ──────────────────────────────────────────────────────
+
+  /// Що можна безпечно зупинити просто зараз.
+  var optimizerCandidates: [Optimizer.Candidate] {
+    Optimizer.candidates(processes: processes, findings: findings, ports: ports)
+  }
+
+  /// Зупинити все позначене. Мʼяко: SIGTERM, як і поодинока зупинка.
+  func optimize(_ candidates: [Optimizer.Candidate]) {
+    let pids = candidates.filter(\.selected).flatMap(\.pids)
+    guard !pids.isEmpty else { return }
+    terminateAll(pids)
   }
 
   /// Мʼяка зупинка (SIGTERM): процес встигає зберегтись і закрити зʼєднання.

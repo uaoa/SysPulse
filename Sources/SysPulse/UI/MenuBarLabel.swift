@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Те, що видно в menu bar завжди: два числа.
+/// Те, що видно в menu bar завжди: одне або два числа.
 ///
 /// Це найдорожче місце додатка, бо система перемальовує рядок меню часто.
 /// Тому тут немає ні графіків, ні анімацій, ні таймерів: лише текст, який
@@ -8,19 +8,22 @@ import SwiftUI
 /// Ширина фіксована моноширинними цифрами, щоб сусідні іконки не стрибали.
 struct MenuBarLabel: View {
   @ObservedObject var monitor: Monitor
-
-  private var level: Int { Format.verdict(monitor.snapshot).level }
+  @ObservedObject var settings: Settings
 
   var body: some View {
     HStack(spacing: 6) {
-      metric(
-        value: monitor.snapshot.cpuTotal,
-        symbol: "cpu",
-        alarming: monitor.snapshot.cpuTotal > 0.85 || monitor.snapshot.loadPerCore > 1.5)
-      metric(
-        value: monitor.snapshot.memPressure,
-        symbol: "memorychip",
-        alarming: monitor.snapshot.memPressure > 0.9 || monitor.snapshot.swapOutsPerSec > 200)
+      if settings.menuBarMode.showsCPU {
+        metric(
+          value: monitor.snapshot.cpuTotal,
+          symbol: "cpu",
+          alarming: monitor.snapshot.cpuTotal > 0.85 || monitor.snapshot.loadPerCore > 1.5)
+      }
+      if settings.menuBarMode.showsMemory {
+        metric(
+          value: monitor.snapshot.memPressure,
+          symbol: "memorychip",
+          alarming: monitor.snapshot.memPressure > 0.9 || monitor.snapshot.swapOutsPerSec > 200)
+      }
     }
     // Підказка при наведенні: коротке пояснення стану без відкриття вікна.
     .help(Format.verdict(monitor.snapshot).text)

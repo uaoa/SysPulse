@@ -11,6 +11,8 @@ swift build -c release
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/SysPulse "$APP/Contents/MacOS/SysPulse"
+# Іконку генерує ./icon.sh; у git лежить і скрипт, і готовий .icns.
+cp SysPulse.icns "$APP/Contents/Resources/SysPulse.icns"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -23,11 +25,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleVersion</key><string>1.0</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleExecutable</key><string>SysPulse</string>
+  <key>CFBundleIconFile</key><string>SysPulse</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <!-- Лише menu bar: без іконки в Dock і без пункту в перемикачі вікон. -->
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <!-- Пояснення в системному запиті: навіщо додатку доступ до вікон. -->
+  <key>NSAccessibilityUsageDescription</key>
+  <string>Щоб показувати, що саме відкрито у застосунках: назви вкладок, чатів і файлів поруч із процесами.</string>
 </dict>
 </plist>
 PLIST
